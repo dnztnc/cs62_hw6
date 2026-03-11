@@ -1,6 +1,7 @@
 package sortCompare;
 
 import java.io.*;
+import java.lang.reflect.Array;
 import java.util.*;
 
 /**
@@ -15,7 +16,9 @@ import java.util.*;
 public class OnDiskSort {
 
 	// TODO: add instance variables
-
+	int maxSize;
+	File workingDirectory;
+	Sorter<String> sorter;
 	/**
 	 * Creates a new sorter for sorting string data on disk. The sorter operates by
 	 * reading in maxSize worth of data elements (in this case, Strings) and then
@@ -35,8 +38,10 @@ public class OnDiskSort {
 	 *                         the sorter to use to sort the chunks in memory
 	 */
 	public OnDiskSort(int maxSize, File workingDirectory, Sorter<String> sorter) {
-		// TODO: update instance variables
-
+		// update instance variables
+		this.maxSize = maxSize;
+		this.workingDirectory = workingDirectory;
+		this.sorter = sorter;
 		// create directory if it doesn't exist
 		if (!workingDirectory.exists()) {
 			workingDirectory.mkdir();
@@ -116,18 +121,69 @@ public class OnDiskSort {
 	 *                   the destination for the final sorted data
 	 */
 	public void sort(WordScanner dataReader, File outputFile) {
-		// TODO: read one String at a time fro the dataReader and save it in an
+		// read one String at a time fro the dataReader and save it in an
 		// ArrayList of maximum capacity maxSize.
-		// When your ArrayList reaches maxSize elements, call the sort method of the
-		// sorter to sort the chunk, write
-		// to disk the temporary file that holds maxSize sorted Strings, and add that
-		// file in an ArrayList of sorted files.
-		// Once this process is completed, call mergeFiles passing the ArrayList of
-		// sorted files which will be responsible
-		// in repeatedly merging them an increasingly larger sorted file which will be
-		// eventually sorted in outputFile.
-		// Don't forget to create out the working directory when you are done.
-	}
+		ArrayList<String> data = new ArrayList<String>(maxSize);
+		ArrayList<File> sortedFiles = new ArrayList<File>();
+		int fileNum = 0;
+
+		while (dataReader.hasNext()) {
+
+			data.add(dataReader.next());
+			// When your ArrayList reaches maxSize elements, call the sort method of the
+			// sorter to sort the chunk, write
+			if (data.size() == maxSize) {
+				sorter.sort(data);
+
+				File tempFile = new File(workingDirectory.getAbsolutePath()+ File.separator + fileNum + ".tempfile");
+				fileNum++;
+
+				try {
+					PrintWriter out = new PrintWriter(new FileOutputStream(tempFile));
+					for (String word : data) {
+						out.println(word);
+					}
+					out.close();
+				} catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+			// to disk the temporary file that holds maxSize sorted Strings, and add that
+			// file in an ArrayList of sorted files.
+				sortedFiles.add(tempFile);
+				data.clear();
+			}
+		}
+
+    if (data.size() > 0) {
+        sorter.sort(data);
+
+        File tempFile = new File(workingDirectory.getAbsolutePath()+ File.separator + fileNum + ".tempfile");
+        fileNum++;
+
+        try {
+            PrintWriter out = new PrintWriter(new FileOutputStream(tempFile));
+            for (String word : data) {
+                out.println(word);
+            }
+            out.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        sortedFiles.add(tempFile);
+        data.clear();
+    }
+	// Once this process is completed, call mergeFiles passing the ArrayList of
+	// sorted files which will be responsible		
+	// in repeatedly merging them an increasingly larger sorted file which will be
+	// eventually sorted in outputFile
+    mergeFiles(sortedFiles, outputFile);
+    dataReader.close();
+	// Don't forget to create out the working directory when you are done.
+	clearOutDirectory(workingDirectory, ".tempfile");
+}		
+		
+
 
 	/**
 	 * Merges all the Files in sortedFiles into one sorted file, whose destination
@@ -138,13 +194,27 @@ public class OnDiskSort {
 	 * @param outputFile  the destination file for the final sorted data
 	 */
 	protected void mergeFiles(ArrayList<File> sortedFiles, File outputFile) {
-		// TODO: the easiest way to do this is to have a temporary file that contains
+		// check edge cases
+		if (sortedFiles.size()==0) {
+			return;
+		}
+		if (sortedFiles.size()==1) {
+			copyFile(sortedFiles.get(0), outputFile);
+			return;
+		}
+		merge(sortedFiles.get(0), sortedFiles.get(1), outputFile);
+		// the easiest way to do this is to have a temporary file that contains
 		// all of
 		// your merged data so far and then just merge in one more file.
-		// To start with, we can just copy the first sortedFile to the temp file and
-		// then
-		// merge in the remaining files linearly.
-		// Look into the copyFile and merge methods and don't forget edge cases.
+		File tempFile = new File(outputFile.getParent() + File.separator + "temp.tempfile");
+		for (int i = 2; i < sortedFiles.size(); i++) {
+			// temporary file holds the merged data so far
+			copyFile(outputFile, tempFile);
+			// merged data so far and new item merged
+			// merge in the remaining files linearly.
+			merge(tempFile, sortedFiles.get(i), outputFile);
+		}
+		tempFile.delete();
 	}
 
 	/**
@@ -156,16 +226,52 @@ public class OnDiskSort {
 	 * @param outFile destination file for the results of merging the two files
 	 */
 	protected void merge(File file1, File file2, File outFile) {
-		// TODO: Open two BufferedReaders to read file1 and file2.
+		try {
+		// Open two BufferedReaders to read file1 and file2.
+		BufferedReader r1 = new BufferedReader(new FileReader(file1));		
+		BufferedReader r2 = new BufferedReader(new FileReader(file2));
+		PrintWriter out = new PrintWriter(new FileOutputStream(outFile));
+
+
+		String s1 = r1.readLine();
+		String s2 = r2.readLine();
 		// Compare the first line of file1 with the first line of file2.
+		while (s1 != null && s2 != null) {
 		// If it is smaller, add it to the outFile and proceed to the second line of
 		// file1.
+			if (s1.compareTo(s2) <= 0) {
+				out.println(s1);
+				s1 = r1.readLine();
+			} 
 		// If it is larger, add the first line of file2 to the outFile and proceed to
 		// the second line of file2.
+			else {
+				out.println(s2);
+				s2 = r2.readLine();
+			}
+		}
 		// If you run out of data from one file, you know that the data from the second
 		// contain only "larger" Strings.
 		// You can just append them to the outFile.
+
+		while (s1 != null) {
+			out.println(s1);
+			s1 = r1.readLine();
+		}
+		while (s2 != null) {
+			out.println(s2);
+			s2 = r2.readLine();
+		}
+
+		out.close();
+		r1.close();
+		r2.close();
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 	}
+
+	
 
 	/**
 	 * Create a sorter that does a mergesort in memory
@@ -185,6 +291,14 @@ public class OnDiskSort {
 		System.out.println("running");
 		diskSorter.sort(scanner, new File("sorting_run//data.sorted"));
 		System.out.println("done");
+
+		// TEST FILE
+		WordScanner scanner2 = new WordScanner(new File("sorting_run//testing.txt"));
+		System.out.println("running");
+		diskSorter.sort(scanner2, new File("sorting_run//testing.sorted"));
+		System.out.println("done");
+
+		
 	}
 
 }
